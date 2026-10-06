@@ -6,21 +6,28 @@ interface PokemonCardProps {
 }
 
 function PokemonCard({ pokemon }: PokemonCardProps) {
+  const primary = (pokemon.types[0] ?? "normal").toLowerCase();
+
   return (
     <Link to={`/pokemon/${pokemon.id}`}>
-      <article>
-        <img src={pokemon.image} alt={pokemon.name} />
+      <article className={`card t-${primary}`}>
+        <div className="card-img">
+          <span className="fx" aria-hidden="true" />
+          <img src={pokemon.image} alt={pokemon.name} loading="lazy" />
+        </div>
 
-        <p>#{String(pokemon.id).padStart(4, "0")}</p>
+        <div className="card-info">
+          <p className="card-id">#{String(pokemon.id).padStart(4, "0")}</p>
+          <h2 className="card-name">{pokemon.name}</h2>
+          <p className="card-region">{pokemon.region}</p>
 
-        <h2>{pokemon.name}</h2>
-
-        <p>{pokemon.region}</p>
-
-        <div>
-          {pokemon.types.map((type) => (
-            <span key={type}>{type} </span>
-          ))}
+          <div className="types">
+            {pokemon.types.map((type) => (
+              <span key={type} className={`type type-${type.toLowerCase()}`}>
+                {type}
+              </span>
+            ))}
+          </div>
         </div>
       </article>
     </Link>

@@ -19,6 +19,8 @@ export interface Pokemon {
     value: number;
   }[];
   image: string;
+  cry: string | null;
+  shinyImage: string | null;
 }
 
 export interface NamedResourceListResponse {
@@ -50,4 +52,40 @@ export interface TypeResponse {
       url: string;
     };
   }[];
+}
+export interface ChainLink {
+  species: { name: string; url: string };
+  evolves_to: ChainLink[];
+}
+
+export interface SpeciesResponse {
+  evolution_chain: { url: string };
+}
+
+export interface EvolutionChainResponse {
+  chain: ChainLink;
+}
+
+interface NamedType {
+  name: string;
+}
+
+export interface TypeRelationsResponse {
+  damage_relations: {
+    double_damage_from: NamedType[];
+    half_damage_from: NamedType[];
+    no_damage_from: NamedType[];
+    double_damage_to: NamedType[];
+  };
+}
+
+export interface EvolutionStage {
+  id: number;
+  name: string;
+  image: string;
+}
+
+export interface Matchups {
+  weak: { type: string; multiplier: number }[];
+  strong: string[];
 }

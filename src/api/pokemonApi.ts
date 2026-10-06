@@ -1,6 +1,11 @@
 import axios from "axios";
 import type {
+  EvolutionChainResponse,
+  EvolutionStage,
   GenerationResponse,
+  Matchups,
+  SpeciesResponse,
+  TypeRelationsResponse,
   NamedResourceListResponse,
   Pokemon,
   PokemonListItem,
@@ -197,5 +202,84 @@ export async function getPokemonById(id: number): Promise<Pokemon> {
     image:
       data.sprites.other?.["official-artwork"]?.front_default ??
       getImageUrl(data.id),
+
+    cry: data.cries?.latest ?? data.cries?.legacy ?? null,
+
+    shinyImage:
+      data.sprites.other?.["official-artwork"]?.front_shiny ?? null,
   };
+}
+export async function getEvolutionChain(id: number): Promise<EvolutionStage[][]> {
+  const species = await axios.get<SpeciesResponse>(
+    `${API_URL}/pokemon-species/${id}`
+  );
+  const chain = await axios.get<EvolutionChainResponse>(
+    species.data.evolution_chain.url
+  );
+
+  const stages: EvolutionStage[][] = [];
+  let level = [chain.data.chain];
+
+  while (level.length > 0) {
+    stages.push(
+      level.map((link) => {
+        const speciesId = getPokemonId(link.species.url);
+        return {
+          id: speciesId,
+          name: formatName(link.species.name),
+          image: getImageUrl(speciesId),
+        };
+      })
+    );
+    level = level.flatMap((link) => link.evolves_to);
+  }
+
+  return stages;
+}
+
+const typeRelationsCache = new Map<string, TypeRelationsResponse>();
+
+async function getTypeRelations(name: string): Promise<TypeRelationsResponse> {
+  const cached = typeRelationsCache.get(name);
+  if (cached) return cached;
+
+  const response = await axios.get<TypeRelationsResponse>(
+    `${API_URL}/type/${name}`
+  );
+  typeRelationsCache.set(name, response.data);
+  return response.data;
+}
+
+export async function getMatchups(types: string[]): Promise<Matchups> {
+  const relations = await Promise.all(
+    types.map((type) => getTypeRelations(type.toLowerCase()))
+  );
+
+  const multipliers = new Map<string, number>();
+  const apply = (list: { name: string }[], factor: number) =>
+    list.forEach((item) =>
+      multipliers.set(item.name, (multipliers.get(item.name) ?? 1) * factor)
+    );
+
+  relations.forEach((relation) => {
+    apply(relation.damage_relations.double_damage_from, 2);
+    apply(relation.damage_relations.half_damage_from, 0.5);
+    apply(relation.damage_relations.no_damage_from, 0);
+  });
+
+  const weak = Array.from(multipliers.entries())
+    .filter(([, multiplier]) => multiplier > 1)
+    .map(([name, multiplier]) => ({ type: formatName(name), multiplier }));
+
+  const strong = Array.from(
+    new Set(
+      relations.flatMap((relation) =>
+        relation.damage_relations.double_damage_to.map((item) =>
+          formatName(item.name)
+        )
+      )
+    )
+  );
+
+  return { weak, strong };
 }

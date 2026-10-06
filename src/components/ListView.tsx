@@ -36,10 +36,10 @@ function ListView({
   }, [pokemon, searchTerm, sortBy, sortOrder]);
 
   return (
-    <section>
-      <p>{filteredPokemon.length} Pokémon found</p>
+    <section className="screen">
+      <p className="count">{filteredPokemon.length} Pokémon found</p>
 
-      <div>
+      <div className="grid">
         {filteredPokemon.map((item) => (
           <PokemonCard key={item.id} pokemon={item} />
         ))}
