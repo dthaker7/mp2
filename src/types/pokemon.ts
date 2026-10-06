@@ -60,6 +60,27 @@ export interface ChainLink {
 
 export interface SpeciesResponse {
   evolution_chain: { url: string };
+  flavor_text_entries: {
+    flavor_text: string;
+    language: { name: string };
+  }[];
+  genera: { genus: string; language: { name: string } }[];
+  varieties: {
+    is_default: boolean;
+    pokemon: { name: string; url: string };
+  }[];
+}
+
+export interface PokemonForm {
+  id: number;
+  name: string;
+  image: string;
+}
+
+export interface SpeciesInfo {
+  description: string;
+  category: string;
+  forms: PokemonForm[];
 }
 
 export interface EvolutionChainResponse {

@@ -4,10 +4,11 @@ import {
   getEvolutionChain,
   getMatchups,
   getPokemonById,
+  getSpeciesInfo,
 } from "../api/pokemonApi";
 import Loader from "../components/Loader";
 import { playCry } from "../utils/sound";
-import type { EvolutionStage, Matchups, Pokemon } from "../types/pokemon";
+import type { EvolutionStage, Matchups, Pokemon, SpeciesInfo } from "../types/pokemon";
 
 const TOTAL_POKEMON = 1025;
 
@@ -39,6 +40,9 @@ function PokemonDetails() {
   const [shiny, setShiny] = useState(false);
   const [evolutions, setEvolutions] = useState<EvolutionStage[][]>([]);
   const [matchups, setMatchups] = useState<Matchups | null>(null);
+  const [info, setInfo] = useState<SpeciesInfo | null>(null);
+  const [formId, setFormId] = useState<number | null>(null);
+  const [formPokemon, setFormPokemon] = useState<Pokemon | null>(null);
 
   const pokemonId = Number(id);
 
@@ -48,6 +52,7 @@ function PokemonDetails() {
         setLoading(true);
         setError("");
         setShiny(false);
+        setFormId(null);
 
         const data = await getPokemonById(pokemonId);
 
@@ -63,19 +68,19 @@ function PokemonDetails() {
     loadPokemon();
   }, [pokemonId]);
 
-  // Evolution chain + type matchups (extra API calls, failures are non-fatal)
+  // Evolution chain + Pokédex entry + forms (failures are non-fatal)
   useEffect(() => {
     if (!pokemon) return;
     let cancelled = false;
 
     setEvolutions([]);
-    setMatchups(null);
+    setInfo(null);
 
-    Promise.all([getEvolutionChain(pokemon.id), getMatchups(pokemon.types)])
-      .then(([chain, matchupData]) => {
+    Promise.all([getEvolutionChain(pokemon.id), getSpeciesInfo(pokemon.id)])
+      .then(([chain, speciesInfo]) => {
         if (!cancelled) {
           setEvolutions(chain);
-          setMatchups(matchupData);
+          setInfo(speciesInfo);
         }
       })
       .catch((err) => console.error(err));
@@ -85,12 +90,55 @@ function PokemonDetails() {
     };
   }, [pokemon]);
 
-  // Play the API cry as soon as the Pokémon loads (also on Previous / Next)
+  // Load the selected form (Mega, Alolan, ...) so its own data is shown
   useEffect(() => {
-    if (pokemon) {
-      playCry(pokemon.cry);
+    if (!pokemon || formId === null) {
+      setFormPokemon(null);
+      return;
     }
-  }, [pokemon]);
+    let cancelled = false;
+
+    getPokemonById(formId, pokemon.id)
+      .then((data) => {
+        if (!cancelled) setFormPokemon(data);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setFormId(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pokemon, formId]);
+
+  // Whatever is on screen: the selected form, or the base Pokémon
+  const shown = formPokemon ?? pokemon;
+
+  // Type matchups follow the types of the form being shown
+  useEffect(() => {
+    if (!shown) return;
+    let cancelled = false;
+
+    setMatchups(null);
+
+    getMatchups(shown.types)
+      .then((data) => {
+        if (!cancelled) setMatchups(data);
+      })
+      .catch((err) => console.error(err));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shown]);
+
+  // Play the API cry when a Pokémon (or one of its forms) is shown
+  useEffect(() => {
+    if (shown) {
+      playCry(shown.cry);
+    }
+  }, [shown]);
 
   // Left / right arrow keys for Previous / Next
   useEffect(() => {
@@ -145,8 +193,10 @@ function PokemonDetails() {
     }
   }
 
-  const primaryType = (pokemon.types[0] ?? "normal").toLowerCase();
-  const artwork = shiny && pokemon.shinyImage ? pokemon.shinyImage : pokemon.image;
+  const current = formPokemon ?? pokemon;
+  const primaryType = (current.types[0] ?? "normal").toLowerCase();
+  const artwork =
+    shiny && current.shinyImage ? current.shinyImage : current.image;
 
   return (
     <Shell>
@@ -158,14 +208,39 @@ function PokemonDetails() {
 
           <p className="card-id">#{String(pokemon.id).padStart(4, "0")}</p>
 
-          <h1>{pokemon.name}</h1>
+          <h1>{current.name}</h1>
 
-          <img src={artwork} alt={`${shiny ? "Shiny " : ""}${pokemon.name}`} />
+          {info && <p className="card-region">{info.category}</p>}
+
+          <img src={artwork} alt={`${shiny ? "Shiny " : ""}${current.name}`} />
+
+          {info && info.forms.length > 0 && (
+            <div className="forms">
+              <button
+                className={`btn btn-small ${formId === null ? "active" : ""}`}
+                aria-pressed={formId === null}
+                onClick={() => setFormId(null)}
+              >
+                Base
+              </button>
+
+              {info.forms.map((form) => (
+                <button
+                  key={form.id}
+                  className={`btn btn-small ${formId === form.id ? "active" : ""}`}
+                  aria-pressed={formId === form.id}
+                  onClick={() => setFormId(form.id)}
+                >
+                  {form.name.replace(`${pokemon.name} `, "")}
+                </button>
+              ))}
+            </div>
+          )}
 
           <p className="card-region">Region: {pokemon.region}</p>
 
           <div className="types centered">
-            {pokemon.types.map((type) => (
+            {current.types.map((type) => (
               <span key={type} className={`type type-${type.toLowerCase()}`}>
                 {type}
               </span>
@@ -173,11 +248,11 @@ function PokemonDetails() {
           </div>
 
           <div className="actions">
-            <button className="btn" onClick={() => playCry(pokemon.cry)}>
+            <button className="btn" onClick={() => playCry(current.cry)}>
               🔊 Play cry
             </button>
 
-            {pokemon.shinyImage && (
+            {current.shinyImage && (
               <button
                 className="btn"
                 aria-pressed={shiny}
@@ -191,9 +266,16 @@ function PokemonDetails() {
 
         <div>
           <div className="panel">
+            <h2>Pokédex Entry</h2>
+            <p className="description">
+              {info ? info.description : "Loading..."}
+            </p>
+          </div>
+
+          <div className="panel">
             <h2>Abilities</h2>
             <ul>
-              {pokemon.abilities.map((ability) => (
+              {current.abilities.map((ability) => (
                 <li key={ability}>{ability}</li>
               ))}
             </ul>
@@ -204,11 +286,11 @@ function PokemonDetails() {
             <ul>
               <li className="stat-row">
                 <span>Height</span>
-                <span>{(pokemon.height / 10).toFixed(1)} m</span>
+                <span>{(current.height / 10).toFixed(1)} m</span>
               </li>
               <li className="stat-row">
                 <span>Weight</span>
-                <span>{(pokemon.weight / 10).toFixed(1)} kg</span>
+                <span>{(current.weight / 10).toFixed(1)} kg</span>
               </li>
             </ul>
           </div>
@@ -216,7 +298,7 @@ function PokemonDetails() {
           <div className="panel">
             <h2>Base Stats</h2>
             <ul>
-              {pokemon.stats.map((stat) => (
+              {current.stats.map((stat) => (
                 <li key={stat.name} className="stat">
                   <span>{stat.name}</span>
                   <span>{stat.value}</span>

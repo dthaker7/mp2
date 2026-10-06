@@ -4,6 +4,7 @@ import type {
   EvolutionStage,
   GenerationResponse,
   Matchups,
+  SpeciesInfo,
   SpeciesResponse,
   TypeRelationsResponse,
   NamedResourceListResponse,
@@ -164,7 +165,11 @@ export async function getPokemonList(): Promise<PokemonListItem[]> {
   return pokemonList;
 }
 
-export async function getPokemonById(id: number): Promise<Pokemon> {
+// regionId lets alternate forms (Mega, Alolan...) reuse the base species region
+export async function getPokemonById(
+  id: number,
+  regionId = id
+): Promise<Pokemon> {
   const response = await axios.get(`${API_URL}/pokemon/${id}`);
 
   const data = response.data;
@@ -174,7 +179,7 @@ export async function getPokemonById(id: number): Promise<Pokemon> {
   return {
     id: data.id,
     name: formatName(data.name),
-    region: regionMap.get(data.id) ?? "Unknown",
+    region: regionMap.get(regionId) ?? "Unknown",
 
     height: data.height,
     weight: data.weight,
@@ -209,12 +214,60 @@ export async function getPokemonById(id: number): Promise<Pokemon> {
       data.sprites.other?.["official-artwork"]?.front_shiny ?? null,
   };
 }
-export async function getEvolutionChain(id: number): Promise<EvolutionStage[][]> {
-  const species = await axios.get<SpeciesResponse>(
-    `${API_URL}/pokemon-species/${id}`
+const speciesCache = new Map<number, Promise<SpeciesResponse>>();
+
+function getSpecies(id: number): Promise<SpeciesResponse> {
+  let request = speciesCache.get(id);
+
+  if (!request) {
+    request = axios
+      .get<SpeciesResponse>(`${API_URL}/pokemon-species/${id}`)
+      .then((response) => response.data);
+    request.catch(() => speciesCache.delete(id));
+    speciesCache.set(id, request);
+  }
+
+  return request;
+}
+
+export async function getSpeciesInfo(id: number): Promise<SpeciesInfo> {
+  const species = await getSpecies(id);
+
+  const entries = species.flavor_text_entries.filter(
+    (entry) => entry.language.name === "en"
   );
+  const latest = entries[entries.length - 1];
+
+  const genus = species.genera.find((item) => item.language.name === "en");
+
+  const forms = species.varieties
+    .filter(
+      (variety) =>
+        !variety.is_default &&
+        /-(mega|alola|galar|hisui|paldea|gmax|primal)/.test(variety.pokemon.name)
+    )
+    .map((variety) => {
+      const formId = getPokemonId(variety.pokemon.url);
+      return {
+        id: formId,
+        name: formatName(variety.pokemon.name),
+        image: getImageUrl(formId),
+      };
+    });
+
+  return {
+    description: latest
+      ? latest.flavor_text.replace(/[\n\f\u00ad]/g, " ")
+      : "No description available.",
+    category: genus?.genus ?? "",
+    forms,
+  };
+}
+
+export async function getEvolutionChain(id: number): Promise<EvolutionStage[][]> {
+  const species = await getSpecies(id);
   const chain = await axios.get<EvolutionChainResponse>(
-    species.data.evolution_chain.url
+    species.evolution_chain.url
   );
 
   const stages: EvolutionStage[][] = [];
